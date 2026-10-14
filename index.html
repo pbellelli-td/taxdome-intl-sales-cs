@@ -150,6 +150,9 @@ summary { cursor: pointer; }
 .cm .meta img { width: 18px; height: 18px; border-radius: 50%; }
 .cm .tx { white-space: pre-wrap; }
 .mdate { font: 600 15px/1.3 var(--display); color: var(--accent); margin: 6px 0 0; }
+.mleg .lg { all: unset; cursor: pointer; display: inline-flex; align-items: center; gap: 2px; padding: 2px 6px; border-radius: 6px; }
+.mleg .lg[aria-pressed="true"] { background: var(--accent-bg); color: var(--fg); }
+.mleg .lg:focus-visible, .mrow:focus-visible { outline: 2px solid var(--accent); }
 .subh { font: 600 13px/1.3 var(--body); letter-spacing: .04em; text-transform: uppercase; color: var(--mut); margin: 0 0 6px; }
 .rec { display: flex; gap: 16px; flex-wrap: wrap; padding: 8px 0; border-top: 1px solid var(--line); font-size: 13px; }
 .rec b { min-width: 90px; }
@@ -206,9 +209,10 @@ a.hs:hover { text-decoration: underline; }
 
   <div class="panel">
     <h2>1. Opening <span class="who">Ajla</span></h2>
-    <p class="sub" style="margin:0 0 8px">Two sentences: closed deals and cohorts per region.</p>
+    <p class="sub" style="margin:0 0 8px">Closed deals and cohorts per region. Click a region or cohort to see the firms.</p>
     <div class="okpi" id="opening"></div>
     <div id="openviz"></div>
+    <div id="openlist"></div>
     <p class="note" style="margin:10px 0 0">Value = HubSpot won-deal amount (USD), used as ARR proxy. Payment-pending deals count as $0.</p>
   </div>
 
@@ -232,7 +236,9 @@ a.hs:hover { text-decoration: underline; }
 
   <div class="panel">
     <h2>3. Onboarding status per market</h2>
+    <p class="sub" style="margin:0 0 8px">Click a market to see the firms.</p>
     <div id="markets"></div>
+    <div id="mklist"></div>
     <label class="lbl" for="n-markets" style="margin-top:12px">Patterns we see</label>
     <textarea id="n-markets" class="notes" placeholder="Patterns we see per market"></textarea>
   </div>
@@ -289,7 +295,7 @@ a.hs:hover { text-decoration: underline; }
 <script>
 (async function () {
   const NS = "http://www.w3.org/2000/svg";
-  const state = { firms: [], meetings: [], checklist: [], meta: null, notes: null, log: [], comments: [], openSt: "", openPat: "", win: 60, canWrite: true };
+  const state = { firms: [], meetings: [], checklist: [], meta: null, notes: null, log: [], comments: [], openSt: "", openPat: "", openOp: "", openMk: "", win: 60, canWrite: true };
   let userApi = null, db = null, editing = false, dirty = false;
   const $ = id => document.getElementById(id);
   const esc = s => String(s == null ? "" : s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -353,10 +359,13 @@ a.hs:hover { text-decoration: underline; }
     const group = fn => { const m = {}; list.forEach(f => { const k = fn(f); m[k] = (m[k] || 0) + 1; }); return Object.entries(m).sort((a, b) => b[1] - a[1]); };
     const total = list.reduce((t, f) => t + (f.arr || 0), 0);
     $("opening").innerHTML = '<div><b>' + list.length + '</b><span>deals closed · last ' + state.win + ' days</span></div><div><b>$' + Math.round(total).toLocaleString("en-US") + '</b><span>deal value (USD)</span></div>';
-    const strip = (title, rows) => '<div class="ostrip"><div class="chart-t">' + title + '</div><div class="obar" role="img" aria-label="' + esc(title + ": " + rows.map(r => r[0] + " " + r[1]).join(", ")) + '">'
-      + rows.map(([k, n], i) => '<i style="flex:' + n + ';background:' + PAL[i % PAL.length] + '" title="' + esc(k) + ' ' + n + '">' + n + '</i>').join("") + '</div><div class="mleg">'
-      + rows.map(([k, n], i) => '<span><span class="dot" style="background:' + PAL[i % PAL.length] + '"></span>' + esc(k) + ' <b>' + n + '</b></span>').join("") + '</div></div>';
-    $("openviz").innerHTML = list.length ? strip("By region", group(f => f.country || "Unknown")) + strip("By seat cohort", group(cohOf)) : '<div class="empty">No deals in this window.</div>';
+    const strip = (title, key, rows) => '<div class="ostrip"><div class="chart-t">' + title + '</div><div class="obar" role="img" aria-label="' + esc(title + ": " + rows.map(r => r[0] + " " + r[1]).join(", ")) + '">'
+      + rows.map(([k, n], i) => '<i data-op="' + esc(key + ":" + k) + '" style="cursor:pointer;flex:' + n + ';background:' + PAL[i % PAL.length] + (state.openOp === key + ":" + k ? ';outline:2px solid var(--fg);outline-offset:-2px' : '') + '" title="' + esc(k) + ' ' + n + '">' + n + '</i>').join("") + '</div><div class="mleg">'
+      + rows.map(([k, n], i) => '<button type="button" class="lg" data-op="' + esc(key + ":" + k) + '" aria-pressed="' + (state.openOp === key + ":" + k) + '"><span class="dot" style="background:' + PAL[i % PAL.length] + '"></span>' + esc(k) + ' <b>' + n + '</b></button>').join("") + '</div></div>';
+    let ol = [];
+    if (state.openOp) { const [kk, vv] = [state.openOp.slice(0, 1), state.openOp.slice(2)]; ol = list.filter(f => kk === "r" ? (f.country || "Unknown") === vv : cohOf(f) === vv).sort((a, b) => (b.arr || 0) - (a.arr || 0)); }
+    $("openlist").innerHTML = state.openOp ? '<div class="flist">' + (ol.length ? ol.map(f => '<span class="it">' + nameLink(f) + ' <span class="muted">· ' + esc(f.country || "") + ' · $' + Math.round(f.arr || 0).toLocaleString("en-US") + ' · signed ' + esc(f.signed) + '</span></span>').join("") : '<span class="muted">No firms.</span>') + '</div>' : "";
+    $("openviz").innerHTML = list.length ? strip("By region", "r", group(f => f.country || "Unknown")) + strip("By seat cohort", "c", group(cohOf)) : '<div class="empty">No deals in this window.</div>';
   }
 
   function renderMarkets(list) {
@@ -366,9 +375,11 @@ a.hs:hover { text-decoration: underline; }
     const defs = [["completed", "Completed"], ["ontrack", "On track"], ["stalled", "Stalled"], ["dropped", "Dropped"]];
     const max = Math.max(...ms.map(m => act.filter(f => (f.country || "Unknown") === m).length));
     $("markets").innerHTML = ms.map(m => { const r = act.filter(f => (f.country || "Unknown") === m);
-      return '<div class="mrow"><span>' + esc(m) + '</span><div class="bar" style="width:' + (100 * r.length / max) + '%" role="img" aria-label="' + esc(m) + ': ' + defs.map(d => r.filter(f => f.st === d[0]).length + " " + d[1].toLowerCase()).join(", ") + '">'
+      return '<div class="mrow" data-mk="' + esc(m) + '" role="button" tabindex="0" aria-pressed="' + (state.openMk === m) + '" style="cursor:pointer' + (state.openMk === m ? ';background:var(--accent-bg);border-radius:6px' : '') + '"><span>' + esc(m) + '</span><div class="bar" style="width:' + (100 * r.length / max) + '%" role="img" aria-label="' + esc(m) + ': ' + defs.map(d => r.filter(f => f.st === d[0]).length + " " + d[1].toLowerCase()).join(", ") + '">'
         + defs.map(d => { const c = r.filter(f => f.st === d[0]).length; return c ? '<i style="width:' + (100 * c / r.length) + '%;background:' + COLOR[d[0]] + '" title="' + d[1] + ' ' + c + '"></i>' : ""; }).join("") + '</div><b>' + r.length + '</b></div>'; }).join("")
       + '<div class="mleg">' + defs.map(d => '<span><span class="dot" style="background:' + COLOR[d[0]] + '"></span>' + d[1] + '</span>').join("") + '</div>';
+    const ml = state.openMk ? act.filter(f => (f.country || "Unknown") === state.openMk).sort((a, b) => b.days - a.days) : [];
+    $("mklist").innerHTML = state.openMk ? '<div class="flist">' + (ml.length ? ml.map(f => '<span class="it">' + nameLink(f) + ' <span class="pill p-' + f.st + '">' + STAT[f.st] + '</span> <span class="muted">· ' + f.days + ' days · ' + esc(f.stage) + '</span></span>').join("") : '<span class="muted">No firms.</span>') + '</div>' : "";
   }
 
   const PATS = [["pain", "Pain points left blank or n/a"], ["expect", "Expectations left blank or n/a"], ["seats", "Seats sold differ from confirmed team members"], ["tools", "Current tools left as Other / N/A"], ["contact", "Firm owner contact fields hold the wrong data"]];
@@ -539,6 +550,9 @@ a.hs:hover { text-decoration: underline; }
   }));
 
   $("board").addEventListener("click", e => { const b = e.target.closest("button[data-st]"); if (!b) return; state.openSt = state.openSt === b.dataset.st ? "" : b.dataset.st; render(); });
+  $("openviz").addEventListener("click", e => { const b = e.target.closest("[data-op]"); if (!b) return; state.openOp = state.openOp === b.dataset.op ? "" : b.dataset.op; render(); });
+  const mkClick = e => { const r = e.target.closest("[data-mk]"); if (!r) return; if (e.type === "keydown" && e.key !== "Enter" && e.key !== " ") return; e.preventDefault(); state.openMk = state.openMk === r.dataset.mk ? "" : r.dataset.mk; render(); };
+  $("markets").addEventListener("click", mkClick); $("markets").addEventListener("keydown", mkClick);
   $("patterns").addEventListener("click", e => { const b = e.target.closest("button[data-pat]"); if (!b) return; state.openPat = state.openPat === b.dataset.pat ? "" : b.dataset.pat; render(); });
 
   $("lg-add").addEventListener("click", async () => {
