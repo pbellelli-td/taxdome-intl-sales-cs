@@ -14,7 +14,7 @@ window.__SNAP__ = {"firms": [{"id": "a3m-control-activ", "data": {"action": "Che
   window.claude = { use: async k => k === "db" ? db : { can: async () => false, id: async () => null, profiles: async ids => Object.fromEntries((ids || []).map(i => [i, { id: i, name: "" }])) } };
 })();
 </script>
-<div style="max-width:1080px;margin:0 auto 12px;padding:10px 14px;border-radius:8px;background:#fff7e0;color:#5c4400;font:13px/1.4 system-ui,sans-serif">Read-only snapshot, data as of 2026-10-28. To add to the team log, checklist or comments, use the live board: <a href="https://claude.ai/artifact/Pu763UoSMkwvoH2QwVA6on">open live board</a>.</div>
+<div style="max-width:1080px;margin:0 auto 12px;padding:10px 14px;border-radius:8px;background:#fff7e0;color:#5c4400;font:13px/1.4 system-ui,sans-serif">Read-only snapshot, data as of 2026-10-28. To add to the team log, checklist, comments or updates on firms not started, use the live board: <a href="https://claude.ai/artifact/Pu763UoSMkwvoH2QwVA6on">open live board</a>.</div>
 <title>Int'l: Sales x CS</title>
 <meta name="claude:viewport-fit-sides" content="cover">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700&family=Instrument+Sans:wght@400;500;600&display=swap">
@@ -150,6 +150,10 @@ summary { cursor: pointer; }
 .cm .meta { color: var(--mut); font-size: 12px; display: flex; gap: 10px; align-items: center; margin-bottom: 2px; }
 .cm .meta img { width: 18px; height: 18px; border-radius: 50%; }
 .cm .tx { white-space: pre-wrap; }
+.ns { padding: 10px 0; border-top: 1px solid var(--line); }
+.ns:first-child { border-top: 0; padding-top: 0; }
+.ns .cm { margin-left: 14px; }
+.nsadd { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; margin: 6px 0 0 14px; }
 .mdate { font: 600 15px/1.3 var(--display); color: var(--accent); margin: 6px 0 0; }
 .mleg .lg { all: unset; cursor: pointer; display: inline-flex; align-items: center; gap: 2px; padding: 2px 6px; border-radius: 6px; }
 .mleg .lg[aria-pressed="true"] { background: var(--accent-bg); color: var(--fg); }
@@ -232,9 +236,15 @@ a.hs:hover { text-decoration: underline; }
         <p><b>On track:</b> in onboarding and under 30 days since signup, or the target is met.</p>
         <p><b>Stalled (delayed):</b> in onboarding, 30+ days since signup and below the target.</p>
         <p><b>Dropped (failed):</b> onboarding closed as Completed (Unresponsive).</p>
-        <p class="note">Firms whose deal closed or whose kick-off took place in the selected window are included. Only firms at kick-off or later are counted. Usage and stage come from HubSpot, refreshed by Claude before each meeting.</p>
+        <p class="note">Firms whose deal closed or whose kick-off took place in the selected window are included. Only firms at kick-off or later are counted; firms not started yet are listed in the next section. Usage and stage come from HubSpot, refreshed by Claude before each meeting.</p>
       </div>
     </details>
+  </div>
+
+  <div class="panel">
+    <h2>Not started: awaiting kick-off <span class="who">All</span></h2>
+    <p class="sub" style="margin:0 0 10px">Every firm whose onboarding is still Not Started, whatever the window above. Add an update under a firm; it stays until removed.</p>
+    <div id="notstarted"></div>
   </div>
 
   <div class="panel">
@@ -298,7 +308,7 @@ a.hs:hover { text-decoration: underline; }
 <script>
 (async function () {
   const NS = "http://www.w3.org/2000/svg";
-  const state = { firms: [], meetings: [], checklist: [], meta: null, notes: null, log: [], comments: [], openSt: "", openPat: "", openOp: "", openMk: "", sales: null, win: 60, canWrite: true };
+  const state = { firms: [], meetings: [], checklist: [], meta: null, notes: null, log: [], comments: [], firmnotes: [], openSt: "", openPat: "", openOp: "", openMk: "", sales: null, win: 60, canWrite: true };
   let userApi = null, db = null, editing = false, dirty = false;
   const $ = id => document.getElementById(id);
   const esc = s => String(s == null ? "" : s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -341,13 +351,13 @@ a.hs:hover { text-decoration: underline; }
 
   function renderBoard(list) {
     const act = list.filter(f => f.st !== "notstarted");
-    const n = act.length, k = x => (x === "notstarted" ? list : act).filter(f => f.st === x).length;
+    const n = act.length, k = x => act.filter(f => f.st === x).length;
     const defs = [["completed", "Completed", "var(--accent)"], ["ontrack", "On track", "var(--ok)"], ["stalled", "Stalled (delayed)", "var(--bad)"], ["dropped", "Dropped (failed)", "var(--warn)"]];
     const pc = v => n ? Math.round(100 * v / n) + "%" : "–";
     $("board").innerHTML = '<div class="note" style="margin-bottom:8px">Deal closed or kicked off in the last ' + state.win + ' days: <b>' + list.length + '</b> firms · kicked off or later: <b>' + n + '</b></div>'
-      + '<div class="bt">' + defs.concat([["notstarted", "Not started (awaiting kick-off)", "var(--idle)"]]).map(d => '<button type="button" class="tile" data-st="' + d[0] + '" aria-pressed="' + (state.openSt === d[0]) + '" style="--c:' + d[2] + '"><b>' + k(d[0]) + ' <small style="font-size:15px;color:var(--mut)">' + (d[0] === "notstarted" ? "" : pc(k(d[0]))) + '</small></b><span>' + d[1] + '</span></button>').join("") + '</div>'
+      + '<div class="bt">' + defs.map(d => '<button type="button" class="tile" data-st="' + d[0] + '" aria-pressed="' + (state.openSt === d[0]) + '" style="--c:' + d[2] + '"><b>' + k(d[0]) + ' <small style="font-size:15px;color:var(--mut)">' + pc(k(d[0])) + '</small></b><span>' + d[1] + '</span></button>').join("") + '</div>'
       + '<div class="bar" role="img" aria-label="Share of firms by status">' + defs.map(d => k(d[0]) ? '<i style="width:' + (100 * k(d[0]) / n) + '%;background:' + d[2] + '" title="' + d[1] + ' ' + k(d[0]) + '"></i>' : '').join("") + '</div>';
-    const open = state.openSt ? (state.openSt === "notstarted" ? list : act).filter(f => f.st === state.openSt).sort((a, b) => b.days - a.days) : [];
+    const open = state.openSt ? act.filter(f => f.st === state.openSt).sort((a, b) => b.days - a.days) : [];
     $("statuslist").innerHTML = state.openSt ? '<div class="flist">' + (open.length ? open.map(f => '<span class="it">' + nameLink(f) + ' <span class="muted">· ' + esc(f.country || f.market || "") + ' · ' + f.days + ' days · ' + esc(f.stage) + (f.kickoff ? ' · kick-off ' + esc(f.kickoff) : '') + (f.clients != null ? ' · <span class="' + (f.clients >= 50 ? 'n-ok' : 'n-bad') + '">' + f.clients + (f.clients === 1 ? ' client' : ' clients') + ' imported</span>' : '') +'</span></span>').join("") : '<span class="muted">No firms in this status.</span>') + '</div>' : "";
   }
 
@@ -453,6 +463,27 @@ a.hs:hover { text-decoration: underline; }
     });
   }
 
+  // Not started firms, independent of the window, each with its own updates (firmnotes)
+  let nsSeq = 0;
+  async function renderNotStarted() {
+    const box = $("notstarted");
+    const firms = state.firms.filter(f => status(f) === "notstarted").map(f => ({ ...f, days: dayN(f.signed) })).sort((a, b) => b.days - a.days);
+    if (!firms.length) { box.innerHTML = '<div class="empty">No firms waiting for kick-off.</div>'; return; }
+    const seq = ++nsSeq;
+    let ps = {};
+    try { const ids = [...new Set(state.firmnotes.map(i => i.by).filter(Boolean))]; if (userApi && userApi.profiles && ids.length) ps = await userApi.profiles(ids); } catch (e) { ps = {}; }
+    if (seq !== nsSeq) return;
+    const keep = {}; box.querySelectorAll(".nsadd input").forEach(i => { if (i.value) keep[i.closest(".ns").dataset.id] = i.value; });
+    const dis = state.canWrite ? "" : " disabled";
+    box.innerHTML = firms.map(f => {
+      const ko = f.kickoff ? (dayN(f.kickoff) < 0 ? "kick-off planned " + esc(f.kickoff) : "kick-off date " + esc(f.kickoff) + " passed, stage not updated") : "no kick-off date";
+      const notes = state.firmnotes.filter(n => n.firm === f.id).sort((a, b) => (a.ts || 0) - (b.ts || 0));
+      return '<div class="ns" data-id="' + esc(f.id) + '"><div>' + nameLink(f) + ' <span class="muted">· ' + esc(f.country || f.market || "") + ' · ' + f.days + ' days since signup · ' + ko + '</span></div>'
+        + notes.map(n => '<div class="cm" data-nid="' + esc(n.id) + '"><div class="meta"><b>' + esc((ps[n.by] || {}).name || "Someone") + '</b><span>' + esc(n.date || "") + '</span><button type="button" class="ghost" data-del="1"' + dis + '>Remove</button></div><div class="tx">' + esc(n.text) + '</div></div>').join("")
+        + '<div class="nsadd"><input type="text" placeholder="Add an update" aria-label="Update for ' + esc(f.name) + '" value="' + esc(keep[f.id] || "") + '"' + dis + '><button type="button" data-add="1"' + dis + '>Add</button></div></div>';
+    }).join("");
+  }
+
   function renderNotes() {
     [["n-handover", "handover"], ["n-markets", "markets"]].forEach(([id, k]) => { const el = $(id); if (document.activeElement !== el) el.value = (state.notes && state.notes[k]) || ""; el.disabled = !state.canWrite; });
   }
@@ -530,14 +561,14 @@ a.hs:hover { text-decoration: underline; }
     const list = scoped();
     $("asof").textContent = state.meta && state.meta.asOf ? "HubSpot data as of " + state.meta.asOf + " · international markets · Piera and Ajla" : (state.firms.length ? "International markets · Piera and Ajla" : "No firms loaded yet");
     $("wincount").textContent = list.length + " firms";
-    renderOpening(list); renderPend(); renderMetric(scoped(true)); renderMarkets(scoped(true)); renderNotes(); renderPatterns(list); renderLog(); renderComments(); renderCheck(); renderTable(list); renderRecs();
+    renderOpening(list); renderPend(); renderMetric(scoped(true)); renderNotStarted(); renderMarkets(scoped(true)); renderNotes(); renderPatterns(list); renderLog(); renderComments(); renderCheck(); renderTable(list); renderRecs();
   }
 
   document.querySelectorAll(".winbtns button").forEach(b => b.addEventListener("click", () => {
     state.win = +b.dataset.w; document.querySelectorAll(".winbtns button").forEach(x => x.setAttribute("aria-pressed", String(x === b))); render(); }));
 
   const guard = el => { el.addEventListener("focusin", () => { editing = true; });
-    el.addEventListener("focusout", () => { setTimeout(() => { if (!$("cards").contains(document.activeElement) && !$("check").contains(document.activeElement)) { editing = false; if (dirty) { dirty = false; render(); } } }, 0); }); };
+    el.addEventListener("focusout", () => { setTimeout(() => { if (!$("cards").contains(document.activeElement) && !$("check").contains(document.activeElement) && !$("notstarted").contains(document.activeElement)) { editing = false; if (dirty) { dirty = false; render(); } } }, 0); }); };
   guard($("check"));
   $("check").addEventListener("change", async e => {
     const t = e.target, row = t.closest(".ck"); if (!row || !db || !t.dataset.f) return;
@@ -605,6 +636,24 @@ a.hs:hover { text-decoration: underline; }
     try { await db.doc("comments/" + b.closest(".cm").dataset.id).delete(); } catch (err) { $("msg").textContent = "Could not remove: " + (err && err.message ? err.message : "unknown error"); }
   });
 
+  guard($("notstarted"));
+  $("notstarted").addEventListener("click", async e => {
+    const b = e.target.closest("button"); if (!b || !db) return;
+    const row = b.closest(".ns");
+    if (b.dataset.add) {
+      const inp = row.querySelector(".nsadd input"), t = inp.value.trim(); if (!t) return;
+      let by = null; try { by = userApi && userApi.id ? await userApi.id() : null; } catch (err) { by = null; }
+      try { await db.collection("firmnotes").add({ firm: row.dataset.id, text: t, date: todayStr(), ts: Date.now(), by }); inp.value = ""; b.blur(); $("msg").textContent = "Added."; }
+      catch (err) { $("msg").textContent = "Could not add: " + (err && err.message ? err.message : "unknown error"); }
+      return;
+    }
+    if (b.dataset.del) {
+      if (b.dataset.armed !== "1") { b.dataset.armed = "1"; b.textContent = "Sure?"; return; }
+      try { await db.doc("firmnotes/" + b.closest(".cm").dataset.nid).delete(); b.blur(); } catch (err) { $("msg").textContent = "Could not remove: " + (err && err.message ? err.message : "unknown error"); }
+    }
+  });
+  $("notstarted").addEventListener("keydown", e => { if (e.key === "Enter" && e.target.matches(".nsadd input")) { e.preventDefault(); e.target.closest(".nsadd").querySelector("button").click(); } });
+
   $("snap").addEventListener("click", async () => {
     if (!db) return;
     const c = counts(scoped(true)), d = TODAY.getFullYear() + "-" + String(TODAY.getMonth() + 1).padStart(2, "0") + "-" + String(TODAY.getDate()).padStart(2, "0");
@@ -627,6 +676,7 @@ a.hs:hover { text-decoration: underline; }
   db.collection("checklist").onSnapshot(s => { state.checklist = s.docs.map(d => ({ id: d.id, ...d.data() })); render(); }, fail);
   db.collection("meetings").onSnapshot(s => { state.meetings = s.docs.map(d => d.data()); render(); }, fail);
   db.collection("comments").onSnapshot(s => { state.comments = s.docs.map(d => ({ id: d.id, ...d.data() })); render(); }, fail);
+  db.collection("firmnotes").onSnapshot(s => { state.firmnotes = s.docs.map(d => ({ id: d.id, ...d.data() })); render(); }, fail);
   db.collection("log").onSnapshot(s => { state.log = s.docs.map(d => ({ id: d.id, ...d.data() })); render(); }, fail);
   db.doc("meta/notes").onSnapshot(s => { state.notes = s.exists ? s.data() : null; render(); }, fail);
   db.doc("meta/sales").onSnapshot(s => { state.sales = s.exists ? s.data() : null; render(); }, fail);
