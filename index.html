@@ -150,6 +150,9 @@ summary { cursor: pointer; }
 .cm .meta { color: var(--mut); font-size: 12px; display: flex; gap: 10px; align-items: center; margin-bottom: 2px; }
 .cm .meta img { width: 18px; height: 18px; border-radius: 50%; }
 .cm .tx { white-space: pre-wrap; }
+.cmday { border-top: 1px solid var(--line); padding: 8px 0 0; }
+.cmday > summary { font-size: 12px; color: var(--mut); text-transform: uppercase; letter-spacing: .05em; padding-bottom: 8px; }
+.cmday .cm:first-of-type { border-top: 0; }
 .ns { padding: 10px 0; border-top: 1px solid var(--line); }
 .ns:first-child { border-top: 0; padding-top: 0; }
 .ns .cm { margin-left: 14px; }
@@ -439,6 +442,7 @@ a.hs:hover { text-decoration: underline; }
   }
 
   let cmSeq = 0;
+  const cmOpen = {}; // per-day open state, kept across re-renders
   async function renderComments() {
     $("cm-text").disabled = !state.canWrite; $("cm-kind").disabled = !state.canWrite; $("cm-add").disabled = !state.canWrite;
     const items = state.comments.slice().sort((a, b) => (b.ts || 0) - (a.ts || 0));
@@ -450,7 +454,16 @@ a.hs:hover { text-decoration: underline; }
     if (seq !== cmSeq) return;
     const dis = state.canWrite ? "" : " disabled";
     box.innerHTML = "";
-    items.forEach(it => {
+    // one collapsible group per day, newest first; the newest is open, older days start closed
+    const days = [...new Set(items.map(it => it.date || ""))];
+    days.forEach((day, i) => {
+      const group = items.filter(it => (it.date || "") === day);
+      const det = document.createElement("details"); det.className = "cmday";
+      det.open = day in cmOpen ? cmOpen[day] : i === 0;
+      det.addEventListener("toggle", () => { cmOpen[day] = det.open; });
+      const sm = document.createElement("summary"); sm.textContent = (day || "No date") + " · " + group.length + (group.length === 1 ? " comment" : " comments"); det.appendChild(sm);
+      box.appendChild(det);
+    group.forEach(it => {
       const p = ps[it.by] || {};
       const d = document.createElement("div"); d.className = "cm"; d.dataset.id = it.id;
       const meta = document.createElement("div"); meta.className = "meta";
@@ -461,7 +474,8 @@ a.hs:hover { text-decoration: underline; }
       const dt = document.createElement("span"); dt.textContent = it.date || ""; meta.appendChild(dt);
       const del = document.createElement("button"); del.type = "button"; del.className = "ghost"; del.dataset.del = "1"; del.textContent = "Remove"; del.disabled = !state.canWrite; meta.appendChild(del);
       const tx = document.createElement("div"); tx.className = "tx"; tx.textContent = it.text || "";
-      d.appendChild(meta); d.appendChild(tx); box.appendChild(d);
+      d.appendChild(meta); d.appendChild(tx); det.appendChild(d);
+    });
     });
   }
 
